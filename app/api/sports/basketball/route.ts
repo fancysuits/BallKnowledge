@@ -22,13 +22,18 @@ export async function GET(request: Request) {
       lastUpdated,
       leagues: basketballLeagues,
       games: bundle.fixtures.map((fixture) => ({
+        stats: bundle.matchStatistics.find(
+          (statistic) => statistic.fixtureId === fixture.id
+        ),
         id: fixture.id,
         homeTeam: fixture.homeTeam,
         awayTeam: fixture.awayTeam,
         homeLogo: fixture.homeLogo,
         awayLogo: fixture.awayLogo,
         date: fixture.startsAt,
+        venue: fixture.venue,
         status: fixture.status,
+        minute: fixture.minute ?? null,
         homeScore: fixture.score?.home ?? null,
         awayScore: fixture.score?.away ?? null
       })),

@@ -8,6 +8,7 @@ import { FilterBar } from "@/app/components/FilterBar";
 import { Header } from "@/app/components/Header";
 import { LoadingCards } from "@/app/components/LoadingCards";
 import { MatchCard } from "@/app/components/MatchCard";
+import { MatchDetailModal } from "@/app/components/MatchDetailModal";
 import { SportTabs } from "@/app/components/SportTabs";
 import {
   isBasketballGameInFilter,
@@ -35,6 +36,14 @@ export default function Home() {
   const [activeFilter, setActiveFilter] = useState<MatchFilter>("all");
   const [footballMatches, setFootballMatches] = useState<FootballMatch[]>([]);
   const [basketballGames, setBasketballGames] = useState<BasketballGame[]>([]);
+  const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+  const [leagueFilter, setLeagueFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedMatch, setSelectedMatch] = useState<
+    | { sport: "football"; match: FootballMatch }
+    | { sport: "basketball"; match: BasketballGame }
+    | null
+  >(null);
   const [footballState, setFootballState] = useState<LoadState>({
     error: null,
     lastUpdated: null,
@@ -52,6 +61,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const stored = window.localStorage.getItem("ballknowledge:favorites");
+
+    if (stored) {
+      setFavoriteTeams(JSON.parse(stored) as string[]);
+    }
+  }, []);
+
+  useEffect(() => {
     if (activeSport === "basketball" && !basketballLoaded) {
       void loadBasketball();
     }
@@ -59,18 +76,37 @@ export default function Home() {
 
   const visibleFootballMatches = useMemo(
     () =>
-      footballMatches.filter((match) =>
-        isFootballMatchInFilter(match, activeFilter)
+      sortFavorites(
+        footballMatches.filter(
+          (match) =>
+            isFootballMatchInFilter(match, activeFilter) &&
+            isInLeague(match, leagueFilter) &&
+            matchesSearch(match, searchQuery)
+        ),
+        favoriteTeams
       ),
-    [activeFilter, footballMatches]
+    [activeFilter, favoriteTeams, footballMatches, leagueFilter, searchQuery]
   );
 
   const visibleBasketballGames = useMemo(
     () =>
-      basketballGames.filter((game) =>
-        isBasketballGameInFilter(game, activeFilter)
+      sortFavorites(
+        basketballGames.filter(
+          (game) =>
+            isBasketballGameInFilter(game, activeFilter) &&
+            matchesSearch(game, searchQuery)
+        ),
+        favoriteTeams
       ),
-    [activeFilter, basketballGames]
+    [activeFilter, basketballGames, favoriteTeams, searchQuery]
+  );
+
+  const leagueOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(footballMatches.map((match) => match.league).filter(Boolean))
+      ) as string[],
+    [footballMatches]
   );
 
   const activeState =
@@ -154,6 +190,17 @@ export default function Home() {
     void loadBasketball();
   }
 
+  function toggleFavoriteTeam(teamName: string) {
+    setFavoriteTeams((current) => {
+      const next = current.includes(teamName)
+        ? current.filter((team) => team !== teamName)
+        : [...current, teamName];
+
+      window.localStorage.setItem("ballknowledge:favorites", JSON.stringify(next));
+      return next;
+    });
+  }
+
   function renderMatches() {
     if (activeState.loading) {
       return <LoadingCards />;
@@ -185,10 +232,20 @@ export default function Home() {
       <div className="match-grid">
         {activeSport === "football"
           ? visibleFootballMatches.map((match) => (
-              <MatchCard key={match.id} match={match} sport="football" />
+              <MatchCard
+                key={match.id}
+                match={match}
+                onSelect={(match) => setSelectedMatch({ sport: "football", match })}
+                sport="football"
+              />
             ))
           : visibleBasketballGames.map((game) => (
-              <MatchCard key={game.id} match={game} sport="basketball" />
+              <MatchCard
+                key={game.id}
+                match={game}
+                onSelect={(match) => setSelectedMatch({ sport: "basketball", match })}
+                sport="basketball"
+              />
             ))}
       </div>
     );
@@ -209,10 +266,107 @@ export default function Home() {
           <FilterBar activeFilter={activeFilter} onChange={setActiveFilter} />
         </div>
 
+        <div className="dashboard-tools">
+          <label>
+            <span>Search team</span>
+            <input
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Arsenal, Celtics..."
+              type="search"
+              value={searchQuery}
+            />
+          </label>
+
+          {activeSport === "football" ? (
+            <label>
+              <span>League</span>
+              <select
+                onChange={(event) => setLeagueFilter(event.target.value)}
+                value={leagueFilter}
+              >
+                <option value="all">All leagues</option>
+                {leagueOptions.map((league) => (
+                  <option key={league} value={league}>
+                    {league}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div className="favorite-strip" aria-label="Favorite teams">
+            {activeSport === "football"
+              ? footballMatches.slice(0, 4).map((match) => (
+                  <button
+                    aria-pressed={favoriteTeams.includes(match.homeTeam)}
+                    key={match.homeTeam}
+                    onClick={() => toggleFavoriteTeam(match.homeTeam)}
+                    type="button"
+                  >
+                    {match.homeTeam}
+                  </button>
+                ))
+              : basketballGames.slice(0, 4).map((game) => (
+                  <button
+                    aria-pressed={favoriteTeams.includes(game.homeTeam)}
+                    key={game.homeTeam}
+                    onClick={() => toggleFavoriteTeam(game.homeTeam)}
+                    type="button"
+                  >
+                    {game.homeTeam}
+                  </button>
+                ))}
+          </div>
+        </div>
+
         {renderMatches()}
       </section>
 
       <Chatbot />
+
+      {selectedMatch ? (
+        <MatchDetailModal
+          match={selectedMatch.match}
+          onClose={() => setSelectedMatch(null)}
+          sport={selectedMatch.sport}
+        />
+      ) : null}
     </main>
   );
+}
+
+function matchesSearch(
+  match: Pick<FootballMatch | BasketballGame, "awayTeam" | "homeTeam">,
+  query: string
+): boolean {
+  const trimmed = query.trim().toLowerCase();
+
+  if (!trimmed) {
+    return true;
+  }
+
+  return (
+    match.homeTeam.toLowerCase().includes(trimmed) ||
+    match.awayTeam.toLowerCase().includes(trimmed)
+  );
+}
+
+function isInLeague(match: FootballMatch, leagueFilter: string): boolean {
+  return leagueFilter === "all" || match.league === leagueFilter;
+}
+
+function sortFavorites<
+  T extends Pick<FootballMatch | BasketballGame, "awayTeam" | "homeTeam">
+>(matches: T[], favoriteTeams: string[]): T[] {
+  return [...matches].sort((left, right) => {
+    const leftFavorite =
+      favoriteTeams.includes(left.homeTeam) ||
+      favoriteTeams.includes(left.awayTeam);
+
+    const rightFavorite =
+      favoriteTeams.includes(right.homeTeam) ||
+      favoriteTeams.includes(right.awayTeam);
+
+    return Number(rightFavorite) - Number(leftFavorite);
+  });
 }

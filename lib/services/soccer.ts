@@ -67,6 +67,14 @@ type ApiSportsFixture = {
   };
 };
 
+type ApiSportsTeam = {
+  team: {
+    id: number;
+    name: string;
+    logo?: string;
+  };
+};
+
 type ApiSportsStandingResponse = {
   league?: {
     standings?: Array<
@@ -117,12 +125,20 @@ export async function getSoccerBundle(question: string): Promise<SoccerBundle> {
 async function getApiSportsSoccerBundle(question: string): Promise<SoccerBundle> {
   const inferredLeague = inferLeague(question);
   const league = soccerLeagues.find((item) => item.id === inferredLeague);
+  const inferredTeams = inferTeamsFromQuestion(question);
+
+  const providerTeams = inferredTeams
+    ? await Promise.all(inferredTeams.map((team) => fetchTeamByName(team)))
+    : [];
 
   const fixturesPayload = await fetchApiSports<{ response?: ApiSportsFixture[] }>(
-    buildFixturesPath(question, league)
+    buildFixturesPath(question, league, providerTeams)
   );
 
-  const fixtures = (fixturesPayload.response || []).slice(0, 40);
+  const fixtures = selectRelevantFixtures(
+    fixturesPayload.response || [],
+    providerTeams
+  ).slice(0, 40);
 
   const normalizedFixtures = fixtures.map((fixture) =>
     normalizeApiSportsFixture(fixture, inferredLeague)
@@ -145,12 +161,22 @@ async function getApiSportsSoccerBundle(question: string): Promise<SoccerBundle>
     matchStatistics,
     providerNotes: [
       "Using API-Sports football data. Logos are mapped from teams.home.logo and teams.away.logo.",
-      "Predictions combine live match stats when available, recent goals, average goals allowed, and head-to-head context when the provider returns it."
+      "Predictions combine live match stats when available, recent goals, average goals allowed, standings, and capped head-to-head context.",
+      ...(inferredTeams && !fixtures.length
+        ? ["No exact fixture was found for the requested teams."]
+        : []),
+      ...(providerTeams.some((team) => !team)
+        ? ["One or more teams could not be resolved through API-Sports team search."]
+        : [])
     ]
   };
 }
 
-function buildFixturesPath(question: string, league?: League): string {
+function buildFixturesPath(
+  question: string,
+  league?: League,
+  teams: Array<ApiSportsTeam | null> = []
+): string {
   const lowerQuestion = question.toLowerCase();
   const searchParams = new URLSearchParams();
 
@@ -181,12 +207,37 @@ function buildFixturesPath(question: string, league?: League): string {
     searchParams.set("next", "40");
   }
 
+  const primaryTeam = teams.find(Boolean);
+  if (primaryTeam?.team.id) {
+    searchParams.set("team", String(primaryTeam.team.id));
+  }
+
   if (league?.providerId) {
     searchParams.set("league", String(league.providerId));
     searchParams.set("season", league.season);
   }
 
   return `/fixtures?${searchParams.toString()}`;
+}
+
+function selectRelevantFixtures(
+  fixtures: ApiSportsFixture[],
+  teams: Array<ApiSportsTeam | null>
+): ApiSportsFixture[] {
+  const teamIds = teams
+    .map((team) => team?.team.id)
+    .filter((teamId): teamId is number => Boolean(teamId));
+
+  if (teamIds.length < 2) {
+    return fixtures;
+  }
+
+  const exact = fixtures.filter((fixture) => {
+    const fixtureTeamIds = [fixture.teams.home.id, fixture.teams.away.id];
+    return teamIds.every((teamId) => fixtureTeamIds.includes(teamId));
+  });
+
+  return exact.length ? exact : fixtures;
 }
 
 async function fetchStandings(league?: League): Promise<Standing[]> {
@@ -272,37 +323,48 @@ function buildTeamStatistic(
   fixtures: Fixture[],
   leagueId: LeagueId
 ): TeamStatistic {
-  const teams = new Map<string, { for: number[]; against: number[]; results: string[] }>();
+  const teams = new Map<
+    string,
+    {
+      awayAgainst: number[];
+      awayFor: number[];
+      for: number[];
+      against: number[];
+      homeAgainst: number[];
+      homeFor: number[];
+      results: string[];
+    }
+  >();
 
   fixtures.forEach((fixture) => {
     const homeGoals = fixture.score?.home ?? 0;
     const awayGoals = fixture.score?.away ?? 0;
 
-    const home = teams.get(fixture.homeTeam) || {
-      for: [],
-      against: [],
-      results: []
-    };
+    const home =
+      teams.get(fixture.homeTeam) ||
+      createTeamAccumulator();
 
-    const away = teams.get(fixture.awayTeam) || {
-      for: [],
-      against: [],
-      results: []
-    };
+    const away =
+      teams.get(fixture.awayTeam) ||
+      createTeamAccumulator();
 
     home.for.push(homeGoals);
     home.against.push(awayGoals);
+    home.homeFor.push(homeGoals);
+    home.homeAgainst.push(awayGoals);
     home.results.push(resultFor(homeGoals, awayGoals));
 
     away.for.push(awayGoals);
     away.against.push(homeGoals);
+    away.awayFor.push(awayGoals);
+    away.awayAgainst.push(homeGoals);
     away.results.push(resultFor(awayGoals, homeGoals));
 
     teams.set(fixture.homeTeam, home);
     teams.set(fixture.awayTeam, away);
   });
 
-  const stats = teams.get(teamName) || { for: [], against: [], results: [] };
+  const stats = teams.get(teamName) || createTeamAccumulator();
 
   return {
     team: teamName,
@@ -310,6 +372,10 @@ function buildTeamStatistic(
     form: stats.results.slice(-5).join("-") || "TBD",
     scoringAverage: average(stats.for) || 1.2,
     concededAverage: average(stats.against) || 1.1,
+    homeScoringAverage: average(stats.homeFor) || undefined,
+    homeConcededAverage: average(stats.homeAgainst) || undefined,
+    awayScoringAverage: average(stats.awayFor) || undefined,
+    awayConcededAverage: average(stats.awayAgainst) || undefined,
     recentGoalsFor: stats.for.slice(-5),
     recentGoalsAgainst: stats.against.slice(-5),
     notes: [
@@ -317,6 +383,18 @@ function buildTeamStatistic(
       `Recent goals for: ${stats.for.slice(-5).join(", ") || "n/a"}`,
       `Recent goals against: ${stats.against.slice(-5).join(", ") || "n/a"}`
     ]
+  };
+}
+
+function createTeamAccumulator() {
+  return {
+    awayAgainst: [],
+    awayFor: [],
+    for: [],
+    against: [],
+    homeAgainst: [],
+    homeFor: [],
+    results: []
   };
 }
 
@@ -458,6 +536,7 @@ function normalizeApiSportsFixture(
     awayLogo: item.teams.away.logo,
     venue: item.fixture.venue?.name,
     status: normalizeStatus(item.fixture.status.short),
+    minute: item.fixture.status.elapsed ?? null,
     score:
       item.goals.home === null || item.goals.away === null
         ? undefined
@@ -466,6 +545,41 @@ function normalizeApiSportsFixture(
             away: item.goals.away
           }
   };
+}
+
+async function fetchTeamByName(teamName: string): Promise<ApiSportsTeam | null> {
+  try {
+    const payload = await fetchApiSports<{ response?: ApiSportsTeam[] }>(
+      `/teams?search=${encodeURIComponent(teamName)}`
+    );
+    const exact = payload.response?.find(
+      (item) => item.team.name.toLowerCase() === teamName.toLowerCase()
+    );
+
+    return exact || payload.response?.[0] || null;
+  } catch (error) {
+    console.error("Soccer team search request failed", error);
+    return null;
+  }
+}
+
+function inferTeamsFromQuestion(question: string): string[] | null {
+  const match = question.match(
+    /(?:prediction|predict|ennustus)?\s*([a-zA-Z\s.]+?)\s+(?:vs|v|against|-)\s+([a-zA-Z\s.]+?)(?:\s+using|\s+with|\?|$)/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return [cleanTeamName(match[1]), cleanTeamName(match[2])].filter(Boolean);
+}
+
+function cleanTeamName(teamName: string): string {
+  return teamName
+    .replace(/^(prediction|predict|ennustus)\s+/i, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 async function fetchApiSports<T>(path: string): Promise<T> {

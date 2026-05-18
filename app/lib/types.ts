@@ -11,9 +11,12 @@ export type FootballMatch = {
   league?: string;
   country?: string;
   date?: string | null;
+  venue?: string;
   status?: string;
+  minute?: number | null;
   homeGoals?: number | null;
   awayGoals?: number | null;
+  stats?: MatchDetailStats;
 };
 
 export type BasketballGame = {
@@ -23,9 +26,34 @@ export type BasketballGame = {
   homeLogo?: string;
   awayLogo?: string;
   date?: string | null;
+  venue?: string;
   status?: string;
+  minute?: number | null;
   homeScore?: number | null;
   awayScore?: number | null;
+  stats?: MatchDetailStats;
+};
+
+export type MatchDetailStats = {
+  possession?: {
+    home: number;
+    away: number;
+  };
+  shots?: {
+    home: number;
+    away: number;
+  };
+  expectedGoals?: {
+    home: number;
+    away: number;
+  };
+  headToHead?: {
+    games: number;
+    homeWins: number;
+    awayWins: number;
+    draws: number;
+    averageGoals: number;
+  };
 };
 
 export type SportsApiResponse<TItem, TKey extends string> = {

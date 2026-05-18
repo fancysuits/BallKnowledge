@@ -21,6 +21,7 @@ export type Fixture = {
   awayLogo?: string;
   venue?: string;
   status: "scheduled" | "live" | "final";
+  minute?: number | null;
   score?: {
     home: number;
     away: number;
@@ -45,6 +46,10 @@ export type TeamStatistic = {
   form: string;
   scoringAverage: number;
   concededAverage: number;
+  homeScoringAverage?: number;
+  homeConcededAverage?: number;
+  awayScoringAverage?: number;
+  awayConcededAverage?: number;
   recentGoalsFor?: number[];
   recentGoalsAgainst?: number[];
   notes: string[];
@@ -90,4 +95,23 @@ export type SportsContext = {
   teamStatistics: TeamStatistic[];
   matchStatistics: MatchStatistic[];
   providerNotes: string[];
+};
+
+export type PredictionConfidence = "Low" | "Medium" | "High";
+
+export type MatchPrediction = {
+  fixture?: Fixture;
+  homeTeam: string;
+  awayTeam: string;
+  type: "pre-match prediction" | "live prediction";
+  homeWinProbability: number;
+  drawProbability?: number;
+  awayWinProbability: number;
+  projectedScore: {
+    home: number;
+    away: number;
+  };
+  confidence: PredictionConfidence;
+  keyReasons: string[];
+  unavailable: string[];
 };

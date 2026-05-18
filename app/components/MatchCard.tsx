@@ -7,13 +7,15 @@ type MatchCardProps =
   | {
       sport: "football";
       match: FootballMatch;
+      onSelect?: (match: FootballMatch) => void;
     }
   | {
       sport: "basketball";
       match: BasketballGame;
+      onSelect?: (match: BasketballGame) => void;
     };
 
-export function MatchCard({ sport, match }: MatchCardProps) {
+export function MatchCard({ sport, match, onSelect }: MatchCardProps) {
   const score =
     sport === "football"
       ? formatScore(match.homeGoals, match.awayGoals)
@@ -24,7 +26,18 @@ export function MatchCard({ sport, match }: MatchCardProps) {
       : "NBA";
 
   return (
-    <article className="match-card">
+    <article
+      className="match-card"
+      onClick={() => onSelect?.(match)}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (onSelect && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onSelect(match);
+        }
+      }}
+    >
       <div className="match-card-meta">
         <span>{meta || (sport === "football" ? "Football" : "Basketball")}</span>
         <StatusBadge status={match.status} />
@@ -43,6 +56,7 @@ export function MatchCard({ sport, match }: MatchCardProps) {
         <CalendarDays size={15} aria-hidden="true" />
         <span>{formatMatchDate(match.date)}</span>
         <span>{formatMatchTime(match.date)}</span>
+        {match.minute ? <span>{match.minute}&apos;</span> : null}
       </div>
     </article>
   );

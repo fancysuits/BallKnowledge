@@ -67,7 +67,13 @@ export function Chatbot() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: trimmed })
+        body: JSON.stringify({
+          history: messages.slice(-6).map((message) => ({
+            content: message.content,
+            role: message.role
+          })),
+          message: trimmed
+        })
       });
       const data = (await response.json()) as ChatResponse;
 
