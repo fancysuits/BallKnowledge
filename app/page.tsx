@@ -64,6 +64,7 @@ export default function Home() {
       ),
     [activeFilter, footballMatches]
   );
+
   const visibleBasketballGames = useMemo(
     () =>
       basketballGames.filter((game) =>
@@ -74,6 +75,7 @@ export default function Home() {
 
   const activeState =
     activeSport === "football" ? footballState : basketballState;
+
   const activeItems =
     activeSport === "football" ? visibleFootballMatches : visibleBasketballGames;
 
@@ -81,17 +83,20 @@ export default function Home() {
     setFootballState((current) => ({ ...current, error: null, loading: true }));
 
     try {
-      const response = await fetch("/api/sports/soccer", { cache: "no-store" });
+      const response = await fetch("/api/soccer/matches", {
+        cache: "no-store"
+      });
+
       const data = (await response.json()) as FootballResponse;
 
       if (!response.ok || data.error) {
         throw new Error(data.error || "Football data could not be loaded.");
       }
 
-      setFootballMatches(data.matches);
+      setFootballMatches(data.matches || []);
       setFootballState({
         error: null,
-        lastUpdated: data.lastUpdated,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
         loading: false
       });
     } catch (error) {
@@ -110,20 +115,21 @@ export default function Home() {
     setBasketballState((current) => ({ ...current, error: null, loading: true }));
 
     try {
-      const response = await fetch("/api/sports/basketball", {
+      const response = await fetch("/api/basketball/matches", {
         cache: "no-store"
       });
+
       const data = (await response.json()) as BasketballResponse;
 
       if (!response.ok || data.error) {
         throw new Error(data.error || "Basketball data could not be loaded.");
       }
 
-      setBasketballGames(data.games);
+      setBasketballGames(data.games || []);
       setBasketballLoaded(true);
       setBasketballState({
         error: null,
-        lastUpdated: data.lastUpdated,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
         loading: false
       });
     } catch (error) {
