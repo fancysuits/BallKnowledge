@@ -19,6 +19,9 @@ export async function GET(request: Request) {
       lastUpdated,
       leagues: soccerLeagues,
       matches: bundle.fixtures.map((fixture) => ({
+        stats: bundle.matchStatistics.find(
+          (statistic) => statistic.fixtureId === fixture.id
+        ),
         id: fixture.id,
         homeTeam: fixture.homeTeam,
         awayTeam: fixture.awayTeam,
@@ -30,7 +33,9 @@ export async function GET(request: Request) {
         country: soccerLeagues.find((league) => league.id === fixture.leagueId)
           ?.country,
         date: fixture.startsAt,
+        venue: fixture.venue,
         status: fixture.status,
+        minute: fixture.minute ?? null,
         homeGoals: fixture.score?.home ?? null,
         awayGoals: fixture.score?.away ?? null
       })),
