@@ -8,6 +8,7 @@ export type League = {
   sport: Sport;
   country: string;
   season: string;
+  providerId?: number;
 };
 
 export type Fixture = {
@@ -16,6 +17,8 @@ export type Fixture = {
   startsAt: string;
   homeTeam: string;
   awayTeam: string;
+  homeLogo?: string;
+  awayLogo?: string;
   venue?: string;
   status: "scheduled" | "live" | "final";
   score?: {
@@ -42,11 +45,22 @@ export type TeamStatistic = {
   form: string;
   scoringAverage: number;
   concededAverage: number;
+  recentGoalsFor?: number[];
+  recentGoalsAgainst?: number[];
   notes: string[];
 };
 
 export type MatchStatistic = {
   fixtureId: string;
+  source?: "live" | "recent" | "head-to-head" | "provider";
+  liveMinute?: number;
+  headToHead?: {
+    games: number;
+    homeWins: number;
+    awayWins: number;
+    draws: number;
+    averageGoals: number;
+  };
   possession?: {
     home: number;
     away: number;

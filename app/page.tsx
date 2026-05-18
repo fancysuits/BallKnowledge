@@ -1,378 +1,212 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle } from "lucide-react";
+import { Chatbot } from "@/app/components/Chatbot";
+import { EmptyState } from "@/app/components/EmptyState";
+import { FilterBar } from "@/app/components/FilterBar";
+import { Header } from "@/app/components/Header";
+import { LoadingCards } from "@/app/components/LoadingCards";
+import { MatchCard } from "@/app/components/MatchCard";
+import { SportTabs } from "@/app/components/SportTabs";
 import {
-  BarChart3,
-  CalendarDays,
-  Loader2,
-  MessagesSquare,
-  Send,
-  Shield,
-  Trophy
-} from "lucide-react";
+  isBasketballGameInFilter,
+  isFootballMatchInFilter
+} from "@/app/lib/statuses";
+import type {
+  BasketballGame,
+  FootballMatch,
+  MatchFilter,
+  Sport,
+  SportsApiResponse
+} from "@/app/lib/types";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
+type FootballResponse = SportsApiResponse<FootballMatch, "matches">;
+type BasketballResponse = SportsApiResponse<BasketballGame, "games">;
+
+type LoadState = {
+  error: string | null;
+  lastUpdated: string | null;
+  loading: boolean;
 };
-
-type ApiContext = {
-  leagues?: Array<{ id: string; name: string; sport: string; country: string }>;
-  fixtures?: Array<{
-    id: string;
-    leagueId: string;
-    startsAt: string;
-    homeTeam: string;
-    awayTeam: string;
-    status: string;
-    venue?: string;
-  }>;
-  standings?: Array<{
-    leagueId: string;
-    rank: number;
-    team: string;
-    played: number;
-    wins: number;
-    draws?: number;
-    losses: number;
-    points: number;
-    differential: number;
-  }>;
-  providerNotes?: string[];
-};
-
-type ChatResponse = {
-  answer?: string;
-  context?: ApiContext;
-  error?: string;
-};
-
-const leagueCards = [
-  {
-    id: "premier-league",
-    name: "Premier League",
-    sport: "Soccer",
-    country: "England",
-    prompt:
-      "Give me Premier League standings, this week's fixtures, win probabilities, and likely final scores."
-  },
-  {
-    id: "la-liga",
-    name: "La Liga",
-    sport: "Soccer",
-    country: "Spain",
-    prompt:
-      "Analyze La Liga fixtures, current standings, match stats, and likely final scores."
-  },
-  {
-    id: "nba",
-    name: "NBA",
-    sport: "Basketball",
-    country: "United States",
-    prompt:
-      "Show NBA games on the calendar, team statistics, win probabilities, and projected final scores."
-  }
-];
-
-const starterPrompts = [
-  "Who has the edge in Arsenal vs Manchester City?",
-  "Predict Real Madrid vs Barcelona with likely final score.",
-  "What is the win probability for Celtics vs Nuggets?",
-  "Compare today's NBA and soccer fixtures."
-];
 
 export default function Home() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Ask about basketball or soccer fixtures, standings, team form, match stats, win probabilities, or likely final scores."
+  const [activeSport, setActiveSport] = useState<Sport>("football");
+  const [activeFilter, setActiveFilter] = useState<MatchFilter>("all");
+  const [footballMatches, setFootballMatches] = useState<FootballMatch[]>([]);
+  const [basketballGames, setBasketballGames] = useState<BasketballGame[]>([]);
+  const [footballState, setFootballState] = useState<LoadState>({
+    error: null,
+    lastUpdated: null,
+    loading: true
+  });
+  const [basketballState, setBasketballState] = useState<LoadState>({
+    error: null,
+    lastUpdated: null,
+    loading: false
+  });
+  const [basketballLoaded, setBasketballLoaded] = useState(false);
+
+  useEffect(() => {
+    void loadFootball();
+  }, []);
+
+  useEffect(() => {
+    if (activeSport === "basketball" && !basketballLoaded) {
+      void loadBasketball();
     }
-  ]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [latestContext, setLatestContext] = useState<ApiContext | null>(null);
+  }, [activeSport, basketballLoaded]);
 
-  const selectedFixtures = useMemo(
-    () => latestContext?.fixtures?.slice(0, 4) || [],
-    [latestContext]
+  const visibleFootballMatches = useMemo(
+    () =>
+      footballMatches.filter((match) =>
+        isFootballMatchInFilter(match, activeFilter)
+      ),
+    [activeFilter, footballMatches]
   );
-  const selectedStandings = useMemo(
-    () => latestContext?.standings?.slice(0, 5) || [],
-    [latestContext]
+  const visibleBasketballGames = useMemo(
+    () =>
+      basketballGames.filter((game) =>
+        isBasketballGameInFilter(game, activeFilter)
+      ),
+    [activeFilter, basketballGames]
   );
 
-  async function sendMessage(message: string) {
-    const trimmed = message.trim();
+  const activeState =
+    activeSport === "football" ? footballState : basketballState;
+  const activeItems =
+    activeSport === "football" ? visibleFootballMatches : visibleBasketballGames;
 
-    if (!trimmed || isLoading) {
+  async function loadFootball() {
+    setFootballState((current) => ({ ...current, error: null, loading: true }));
+
+    try {
+      const response = await fetch("/api/sports/soccer", { cache: "no-store" });
+      const data = (await response.json()) as FootballResponse;
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Football data could not be loaded.");
+      }
+
+      setFootballMatches(data.matches);
+      setFootballState({
+        error: null,
+        lastUpdated: data.lastUpdated,
+        loading: false
+      });
+    } catch (error) {
+      setFootballState({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Football data could not be loaded.",
+        lastUpdated: null,
+        loading: false
+      });
+    }
+  }
+
+  async function loadBasketball() {
+    setBasketballState((current) => ({ ...current, error: null, loading: true }));
+
+    try {
+      const response = await fetch("/api/sports/basketball", {
+        cache: "no-store"
+      });
+      const data = (await response.json()) as BasketballResponse;
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Basketball data could not be loaded.");
+      }
+
+      setBasketballGames(data.games);
+      setBasketballLoaded(true);
+      setBasketballState({
+        error: null,
+        lastUpdated: data.lastUpdated,
+        loading: false
+      });
+    } catch (error) {
+      setBasketballLoaded(true);
+      setBasketballState({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Basketball data could not be loaded.",
+        lastUpdated: null,
+        loading: false
+      });
+    }
+  }
+
+  function refreshActiveSport() {
+    if (activeSport === "football") {
+      void loadFootball();
       return;
     }
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: trimmed })
-      });
-      const data = (await response.json()) as ChatResponse;
-
-      if (!response.ok || data.error) {
-        throw new Error(data.error || "The sports analyst could not respond.");
-      }
-
-      setLatestContext(data.context || null);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.answer || "No prediction was returned."
-        }
-      ]);
-    } catch (error) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            error instanceof Error
-              ? error.message
-              : "Something went wrong while fetching sports analytics."
-        }
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+    void loadBasketball();
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void sendMessage(input);
+  function renderMatches() {
+    if (activeState.loading) {
+      return <LoadingCards />;
+    }
+
+    if (activeState.error) {
+      return (
+        <div className="error-state">
+          <AlertCircle size={24} aria-hidden="true" />
+          <h3>Could not load {activeSport}</h3>
+          <p>{activeState.error}</p>
+          <button onClick={refreshActiveSport} type="button">
+            Try again
+          </button>
+        </div>
+      );
+    }
+
+    if (!activeItems.length) {
+      return (
+        <EmptyState
+          title="No matches in this view"
+          description="Try another status filter or refresh the current sport."
+        />
+      );
+    }
+
+    return (
+      <div className="match-grid">
+        {activeSport === "football"
+          ? visibleFootballMatches.map((match) => (
+              <MatchCard key={match.id} match={match} sport="football" />
+            ))
+          : visibleBasketballGames.map((game) => (
+              <MatchCard key={game.id} match={game} sport="basketball" />
+            ))}
+      </div>
+    );
   }
 
   return (
-    <main className="app-shell">
-      <aside className="league-panel" aria-label="Sports leagues and calendars">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <BarChart3 size={22} aria-hidden="true" />
-          </div>
-          <div>
-            <p className="eyebrow">AI Sports Desk</p>
-            <h1>Analytics Chat</h1>
-          </div>
+    <main className="app-shell dashboard-shell">
+      <section className="dashboard-panel" aria-label="Sports match dashboard">
+        <Header
+          activeSport={activeSport}
+          isRefreshing={activeState.loading}
+          lastUpdated={activeState.lastUpdated}
+          onRefresh={refreshActiveSport}
+        />
+
+        <div className="control-row">
+          <SportTabs activeSport={activeSport} onChange={setActiveSport} />
+          <FilterBar activeFilter={activeFilter} onChange={setActiveFilter} />
         </div>
 
-        <section className="panel-section">
-          <div className="section-heading">
-            <Trophy size={16} aria-hidden="true" />
-            <h2>League Boards</h2>
-          </div>
-          <div className="league-list">
-            {leagueCards.map((league) => (
-              <button
-                className="league-card"
-                key={league.id}
-                onClick={() => void sendMessage(league.prompt)}
-                type="button"
-              >
-                <span>
-                  <strong>{league.name}</strong>
-                  <small>
-                    {league.sport} / {league.country}
-                  </small>
-                </span>
-                <Shield size={18} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel-section">
-          <div className="section-heading">
-            <CalendarDays size={16} aria-hidden="true" />
-            <h2>Calendars</h2>
-          </div>
-          <div className="calendar-strip">
-            <button
-              type="button"
-              onClick={() =>
-                void sendMessage("List the Premier League game calendar.")
-              }
-            >
-              Premier League
-            </button>
-            <button
-              type="button"
-              onClick={() => void sendMessage("List the La Liga game calendar.")}
-            >
-              La Liga
-            </button>
-            <button
-              type="button"
-              onClick={() => void sendMessage("List the NBA game calendar.")}
-            >
-              NBA
-            </button>
-          </div>
-        </section>
-
-        <section className="panel-section compact">
-          <h2>Provider Status</h2>
-          <p>
-            Sports and OpenAI services are server-side. Add keys in{" "}
-            <code>.env.local</code> to replace placeholder data.
-          </p>
-        </section>
-      </aside>
-
-      <section className="chat-workspace" aria-label="AI sports chat">
-        <header className="chat-header">
-          <div>
-            <p className="eyebrow">Text-only predictions</p>
-            <h2>Ask about games, standings, stats, and probabilities</h2>
-          </div>
-          <div className="header-pill">
-            <MessagesSquare size={16} aria-hidden="true" />
-            API-ready
-          </div>
-        </header>
-
-        <div className="chat-grid">
-          <div className="conversation">
-            <div className="messages" aria-live="polite">
-              {messages.map((message) => (
-                <article
-                  className={`message ${message.role}`}
-                  key={message.id}
-                >
-                  <span>{message.role === "assistant" ? "Analyst" : "You"}</span>
-                  <p>{message.content}</p>
-                </article>
-              ))}
-              {isLoading ? (
-                <article className="message assistant">
-                  <span>Analyst</span>
-                  <p className="loading-line">
-                    <Loader2 size={16} aria-hidden="true" /> Checking sports
-                    context...
-                  </p>
-                </article>
-              ) : null}
-            </div>
-
-            <div className="starter-row" aria-label="Example questions">
-              {starterPrompts.map((prompt) => (
-                <button
-                  disabled={isLoading}
-                  key={prompt}
-                  onClick={() => void sendMessage(prompt)}
-                  type="button"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-
-            <form className="composer" onSubmit={handleSubmit}>
-              <label htmlFor="sports-question">Sports question</label>
-              <textarea
-                id="sports-question"
-                onChange={(event) => setInput(event.target.value)}
-                placeholder="Ask: Predict Arsenal vs Man City using live scores, standings and team stats..."
-                rows={3}
-                value={input}
-              />
-              <button
-                aria-busy={isLoading}
-                disabled={isLoading || !input.trim()}
-                type="submit"
-              >
-                {isLoading ? (
-                  <Loader2 size={18} aria-hidden="true" />
-                ) : (
-                  <Send size={18} aria-hidden="true" />
-                )}
-                Send
-              </button>
-            </form>
-          </div>
-
-          <aside className="insight-panel" aria-label="Latest sports context">
-            <section>
-              <h3>Latest Fixtures</h3>
-              {selectedFixtures.length ? (
-                <div className="context-list">
-                  {selectedFixtures.map((fixture) => (
-                    <div className="context-item" key={fixture.id}>
-                      <strong>
-                        {fixture.homeTeam} vs {fixture.awayTeam}
-                      </strong>
-                      <span>
-                        {fixture.leagueId} /{" "}
-                        {new Date(fixture.startsAt).toLocaleString([], {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted">Ask a question to load game context.</p>
-              )}
-            </section>
-
-            <section>
-              <h3>Standings Snapshot</h3>
-              {selectedStandings.length ? (
-                <div className="table-shell">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Rank</th>
-                        <th>Team</th>
-                        <th>W</th>
-                        <th>Pts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedStandings.map((standing) => (
-                        <tr key={`${standing.leagueId}-${standing.team}`}>
-                          <td>{standing.rank}</td>
-                          <td>{standing.team}</td>
-                          <td>{standing.wins}</td>
-                          <td>{standing.points || standing.differential}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="muted">Standings appear after the first query.</p>
-              )}
-            </section>
-          </aside>
-        </div>
+        {renderMatches()}
       </section>
+
+      <Chatbot />
     </main>
   );
 }

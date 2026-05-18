@@ -3,15 +3,41 @@ import type { SportsContext } from "@/lib/types/sports";
 type PredictionInput = {
   question: string;
   sportsContext: SportsContext;
+  useWebSearch?: boolean;
 };
 
 export async function generateSportsPrediction({
   question,
-  sportsContext
+  sportsContext,
+  useWebSearch = false
 }: PredictionInput): Promise<string> {
   if (!process.env.OPENAI_API_KEY) {
     return buildLocalFallback(question, sportsContext);
   }
+
+  const requestBody = {
+    model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
+    input: [
+      {
+        role: "system",
+        content:
+          "You are a concise sports assistant. Use supplied context first. Say when data may be incomplete."
+      },
+      {
+        role: "user",
+        content: JSON.stringify(
+          {
+            question,
+            providerContext: compactSportsContext(sportsContext)
+          },
+          null,
+          2
+        )
+      }
+    ],
+    max_output_tokens: 250,
+    ...(useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {})
+  };
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -19,27 +45,7 @@ export async function generateSportsPrediction({
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a sports analytics assistant for basketball and soccer. Use only the supplied provider context. Give concise predictions, win probabilities, likely final scores, and caveats. Never present placeholders as live verified data."
-        },
-        {
-          role: "user",
-          content: JSON.stringify(
-            {
-              question,
-              providerContext: sportsContext
-            },
-            null,
-            2
-          )
-        }
-      ]
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -113,4 +119,15 @@ function estimateScore(scoringAverage: number): number {
   }
 
   return Math.max(0, Math.round(scoringAverage));
+}
+
+function compactSportsContext(sportsContext: SportsContext): SportsContext {
+  return {
+    leagues: sportsContext.leagues.slice(0, 4),
+    fixtures: sportsContext.fixtures.slice(0, 6),
+    standings: sportsContext.standings.slice(0, 8),
+    teamStatistics: sportsContext.teamStatistics.slice(0, 8),
+    matchStatistics: sportsContext.matchStatistics.slice(0, 4),
+    providerNotes: sportsContext.providerNotes.slice(0, 3)
+  };
 }
