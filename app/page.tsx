@@ -62,6 +62,7 @@ export default function Home() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("ballknowledge:favorites");
+
     if (stored) {
       setFavoriteTeams(JSON.parse(stored) as string[]);
     }
@@ -76,26 +77,30 @@ export default function Home() {
   const visibleFootballMatches = useMemo(
     () =>
       sortFavorites(
-        footballMatches.filter((match) =>
-          isFootballMatchInFilter(match, activeFilter) &&
-          isInLeague(match, leagueFilter) &&
-          matchesSearch(match, searchQuery)
+        footballMatches.filter(
+          (match) =>
+            isFootballMatchInFilter(match, activeFilter) &&
+            isInLeague(match, leagueFilter) &&
+            matchesSearch(match, searchQuery)
         ),
         favoriteTeams
       ),
     [activeFilter, favoriteTeams, footballMatches, leagueFilter, searchQuery]
   );
+
   const visibleBasketballGames = useMemo(
     () =>
       sortFavorites(
-        basketballGames.filter((game) =>
-          isBasketballGameInFilter(game, activeFilter) &&
-          matchesSearch(game, searchQuery)
+        basketballGames.filter(
+          (game) =>
+            isBasketballGameInFilter(game, activeFilter) &&
+            matchesSearch(game, searchQuery)
         ),
         favoriteTeams
       ),
     [activeFilter, basketballGames, favoriteTeams, searchQuery]
   );
+
   const leagueOptions = useMemo(
     () =>
       Array.from(
@@ -106,6 +111,7 @@ export default function Home() {
 
   const activeState =
     activeSport === "football" ? footballState : basketballState;
+
   const activeItems =
     activeSport === "football" ? visibleFootballMatches : visibleBasketballGames;
 
@@ -113,17 +119,20 @@ export default function Home() {
     setFootballState((current) => ({ ...current, error: null, loading: true }));
 
     try {
-      const response = await fetch("/api/sports/soccer", { cache: "no-store" });
+      const response = await fetch("/api/soccer/matches", {
+        cache: "no-store"
+      });
+
       const data = (await response.json()) as FootballResponse;
 
       if (!response.ok || data.error) {
         throw new Error(data.error || "Football data could not be loaded.");
       }
 
-      setFootballMatches(data.matches);
+      setFootballMatches(data.matches || []);
       setFootballState({
         error: null,
-        lastUpdated: data.lastUpdated,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
         loading: false
       });
     } catch (error) {
@@ -142,20 +151,21 @@ export default function Home() {
     setBasketballState((current) => ({ ...current, error: null, loading: true }));
 
     try {
-      const response = await fetch("/api/sports/basketball", {
+      const response = await fetch("/api/basketball/matches", {
         cache: "no-store"
       });
+
       const data = (await response.json()) as BasketballResponse;
 
       if (!response.ok || data.error) {
         throw new Error(data.error || "Basketball data could not be loaded.");
       }
 
-      setBasketballGames(data.games);
+      setBasketballGames(data.games || []);
       setBasketballLoaded(true);
       setBasketballState({
         error: null,
-        lastUpdated: data.lastUpdated,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
         loading: false
       });
     } catch (error) {
@@ -185,6 +195,7 @@ export default function Home() {
       const next = current.includes(teamName)
         ? current.filter((team) => team !== teamName)
         : [...current, teamName];
+
       window.localStorage.setItem("ballknowledge:favorites", JSON.stringify(next));
       return next;
     });
@@ -265,6 +276,7 @@ export default function Home() {
               value={searchQuery}
             />
           </label>
+
           {activeSport === "football" ? (
             <label>
               <span>League</span>
@@ -281,6 +293,7 @@ export default function Home() {
               </select>
             </label>
           ) : null}
+
           <div className="favorite-strip" aria-label="Favorite teams">
             {activeSport === "football"
               ? footballMatches.slice(0, 4).map((match) => (
@@ -310,6 +323,7 @@ export default function Home() {
       </section>
 
       <Chatbot />
+
       {selectedMatch ? (
         <MatchDetailModal
           match={selectedMatch.match}
@@ -326,6 +340,7 @@ function matchesSearch(
   query: string
 ): boolean {
   const trimmed = query.trim().toLowerCase();
+
   if (!trimmed) {
     return true;
   }
@@ -340,15 +355,17 @@ function isInLeague(match: FootballMatch, leagueFilter: string): boolean {
   return leagueFilter === "all" || match.league === leagueFilter;
 }
 
-function sortFavorites<T extends Pick<FootballMatch | BasketballGame, "awayTeam" | "homeTeam">>(
-  matches: T[],
-  favoriteTeams: string[]
-): T[] {
+function sortFavorites<
+  T extends Pick<FootballMatch | BasketballGame, "awayTeam" | "homeTeam">
+>(matches: T[], favoriteTeams: string[]): T[] {
   return [...matches].sort((left, right) => {
     const leftFavorite =
-      favoriteTeams.includes(left.homeTeam) || favoriteTeams.includes(left.awayTeam);
+      favoriteTeams.includes(left.homeTeam) ||
+      favoriteTeams.includes(left.awayTeam);
+
     const rightFavorite =
-      favoriteTeams.includes(right.homeTeam) || favoriteTeams.includes(right.awayTeam);
+      favoriteTeams.includes(right.homeTeam) ||
+      favoriteTeams.includes(right.awayTeam);
 
     return Number(rightFavorite) - Number(leftFavorite);
   });

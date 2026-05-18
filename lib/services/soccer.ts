@@ -126,25 +126,32 @@ async function getApiSportsSoccerBundle(question: string): Promise<SoccerBundle>
   const inferredLeague = inferLeague(question);
   const league = soccerLeagues.find((item) => item.id === inferredLeague);
   const inferredTeams = inferTeamsFromQuestion(question);
+
   const providerTeams = inferredTeams
     ? await Promise.all(inferredTeams.map((team) => fetchTeamByName(team)))
     : [];
+
   const fixturesPayload = await fetchApiSports<{ response?: ApiSportsFixture[] }>(
     buildFixturesPath(question, league, providerTeams)
   );
+
   const fixtures = selectRelevantFixtures(
     fixturesPayload.response || [],
     providerTeams
-  ).slice(0, 8);
+  ).slice(0, 40);
+
   const normalizedFixtures = fixtures.map((fixture) =>
     normalizeApiSportsFixture(fixture, inferredLeague)
   );
+
   const standings = await fetchStandings(league);
+
   const teamStatistics = await buildTeamStatisticsFromRecentGames(
     fixtures,
     normalizedFixtures,
     inferredLeague
   );
+
   const matchStatistics = await buildMatchStatistics(fixtures);
 
   return {
@@ -173,13 +180,23 @@ function buildFixturesPath(
   const lowerQuestion = question.toLowerCase();
   const searchParams = new URLSearchParams();
 
-  if (
+  const wantsLiveData =
     lowerQuestion.includes("live") ||
     lowerQuestion.includes("praegu") ||
     lowerQuestion.includes("mitmes minut") ||
+    lowerQuestion.includes("minut") ||
+    lowerQuestion.includes("minute") ||
     lowerQuestion.includes("score") ||
-    lowerQuestion.includes("skoor")
-  ) {
+    lowerQuestion.includes("skoor") ||
+    lowerQuestion.includes("seis") ||
+    lowerQuestion.includes("käib") ||
+    lowerQuestion.includes("kaib") ||
+    lowerQuestion.includes("mängib") ||
+    lowerQuestion.includes("mangib") ||
+    lowerQuestion.includes("currently") ||
+    lowerQuestion.includes("right now");
+
+  if (wantsLiveData) {
     searchParams.set("live", "all");
     return `/fixtures?${searchParams.toString()}`;
   }
@@ -187,7 +204,7 @@ function buildFixturesPath(
   if (lowerQuestion.includes("today") || lowerQuestion.includes("täna")) {
     searchParams.set("date", new Date().toISOString().slice(0, 10));
   } else {
-    searchParams.set("next", "8");
+    searchParams.set("next", "40");
   }
 
   const primaryTeam = teams.find(Boolean);
@@ -232,6 +249,7 @@ async function fetchStandings(league?: League): Promise<Standing[]> {
     const payload = await fetchApiSports<{ response?: ApiSportsStandingResponse[] }>(
       `/standings?league=${league.providerId}&season=${league.season}`
     );
+
     const leagueStandings = payload.response?.[0]?.league?.standings?.[0] || [];
 
     return leagueStandings.slice(0, 12).map((standing) => ({
@@ -260,10 +278,12 @@ async function buildTeamStatisticsFromRecentGames(
 
   providerFixtures.forEach((fixture, index) => {
     const normalized = normalizedFixtures[index];
+
     teams.set(fixture.teams.home.id, {
       name: fixture.teams.home.name,
       fallback: [normalized]
     });
+
     teams.set(fixture.teams.away.id, {
       name: fixture.teams.away.name,
       fallback: [normalized]
@@ -274,6 +294,7 @@ async function buildTeamStatisticsFromRecentGames(
     Array.from(teams.entries()).map(async ([teamId, team]) => {
       const recentGames = await fetchRecentTeamGames(teamId);
       const sourceGames = recentGames.length ? recentGames : team.fallback;
+
       return buildTeamStatistic(team.name, teamId, sourceGames, leagueId);
     })
   );
@@ -318,9 +339,11 @@ function buildTeamStatistic(
   fixtures.forEach((fixture) => {
     const homeGoals = fixture.score?.home ?? 0;
     const awayGoals = fixture.score?.away ?? 0;
+
     const home =
       teams.get(fixture.homeTeam) ||
       createTeamAccumulator();
+
     const away =
       teams.get(fixture.awayTeam) ||
       createTeamAccumulator();
@@ -330,11 +353,13 @@ function buildTeamStatistic(
     home.homeFor.push(homeGoals);
     home.homeAgainst.push(awayGoals);
     home.results.push(resultFor(homeGoals, awayGoals));
+
     away.for.push(awayGoals);
     away.against.push(homeGoals);
     away.awayFor.push(awayGoals);
     away.awayAgainst.push(homeGoals);
     away.results.push(resultFor(awayGoals, homeGoals));
+
     teams.set(fixture.homeTeam, home);
     teams.set(fixture.awayTeam, away);
   });
@@ -380,10 +405,12 @@ async function buildMatchStatistics(
     fixtures.slice(0, 4).map(async (fixture) => {
       const normalizedStatus = normalizeStatus(fixture.fixture.status.short);
       const fixtureId = String(fixture.fixture.id);
+
       const liveStats =
         normalizedStatus === "live"
           ? await fetchLiveStatistics(fixture.fixture.id)
           : null;
+
       const headToHead = await fetchHeadToHead(
         fixture.teams.home.id,
         fixture.teams.away.id
@@ -412,6 +439,7 @@ async function fetchLiveStatistics(
     const payload = await fetchApiSports<{ response?: ApiSportsFixtureStatistic[] }>(
       `/fixtures/statistics?fixture=${fixtureId}`
     );
+
     const [home, away] = payload.response || [];
 
     if (!home || !away) {
@@ -450,6 +478,7 @@ async function fetchHeadToHead(
     const payload = await fetchApiSports<{ response?: ApiSportsFixture[] }>(
       `/fixtures/headtohead?h2h=${homeTeamId}-${awayTeamId}&last=5`
     );
+
     const games = payload.response || [];
 
     if (!games.length) {
@@ -470,7 +499,8 @@ async function fetchHeadToHead(
             summary.homeWins + (requestedHomeGoals > requestedAwayGoals ? 1 : 0),
           awayWins:
             summary.awayWins + (requestedAwayGoals > requestedHomeGoals ? 1 : 0),
-          draws: summary.draws + (requestedHomeGoals === requestedAwayGoals ? 1 : 0),
+          draws:
+            summary.draws + (requestedHomeGoals === requestedAwayGoals ? 1 : 0),
           averageGoals:
             summary.averageGoals + requestedHomeGoals + requestedAwayGoals
         };
@@ -553,7 +583,9 @@ function cleanTeamName(teamName: string): string {
 }
 
 async function fetchApiSports<T>(path: string): Promise<T> {
-  const baseUrl = process.env.SOCCER_API_BASE_URL || "https://v3.football.api-sports.io";
+  const baseUrl =
+    process.env.SOCCER_API_BASE_URL || "https://v3.football.api-sports.io";
+
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
     headers: {
       "x-apisports-key": process.env.SOCCER_API_KEY || ""
@@ -718,7 +750,9 @@ function getPlaceholderSoccerBundle(
         points: 79,
         differential: 46
       }
-    ] satisfies Standing[]).filter((standing) => standing.leagueId === inferredLeague),
+    ] satisfies Standing[]).filter(
+      (standing) => standing.leagueId === inferredLeague
+    ),
     teamStatistics: ([
       {
         leagueId: "premier-league",

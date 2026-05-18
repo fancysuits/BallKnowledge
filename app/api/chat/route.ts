@@ -25,21 +25,24 @@ export async function POST(request: Request) {
 
     const contextQuestion = buildContextQuestion(message, body.history || []);
     const sportsContext = await buildSportsContext(contextQuestion);
+
     const prediction = looksLikePrediction(message)
       ? buildFootballPrediction(contextQuestion, sportsContext)
       : null;
+
     const liveStatusAnswer = looksLikeLiveStatusQuestion(message)
       ? buildLiveStatusAnswer(contextQuestion, sportsContext)
       : null;
+
     const answer = prediction
       ? formatPrediction(prediction)
       : liveStatusAnswer
         ? liveStatusAnswer
-      : await generateSportsPrediction({
-        question: contextQuestion,
-        sportsContext,
-        useWebSearch: needsFreshInfo(message)
-      });
+        : await generateSportsPrediction({
+            question: contextQuestion,
+            sportsContext,
+            useWebSearch: needsFreshInfo(message)
+          });
 
     return NextResponse.json({
       answer,
@@ -53,6 +56,8 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
+          "Spordianalüütik ei saanud hetkel vastata. Proovi mõne hetke pärast uuesti.",
+        reply:
           "Spordianalüütik ei saanud hetkel vastata. Proovi mõne hetke pärast uuesti."
       },
       { status: 500 }
@@ -83,14 +88,21 @@ function isShortFollowUp(message: string): boolean {
 
 function looksLikePrediction(message: string): boolean {
   const lower = message.toLowerCase();
+
   return [
     "prediction",
     "predict",
     "ennustus",
+    "ennusta",
     "kes võidab",
+    "kes voidab",
     "who will win",
     "win probability",
     "likely final score",
+    "tõenäosus",
+    "toenaosus",
+    "võidutõenäosus",
+    "voidutoenaosus",
     "head to head",
     "h2h",
     "projected score"
@@ -99,6 +111,7 @@ function looksLikePrediction(message: string): boolean {
 
 function needsFreshInfo(message: string): boolean {
   const lower = message.toLowerCase();
+
   return [
     "täna",
     "today",
@@ -106,15 +119,28 @@ function needsFreshInfo(message: string): boolean {
     "viimane",
     "news",
     "uudis",
+    "uudised",
     "praegu",
     "hetkel",
     "live",
-    "current"
+    "current",
+    "otsi",
+    "otsing",
+    "internet",
+    "internetist",
+    "veeb",
+    "veebist",
+    "search",
+    "web",
+    "google",
+    "look up",
+    "find online"
   ].some((term) => lower.includes(term));
 }
 
 function looksLikeLiveStatusQuestion(message: string): boolean {
   const lower = message.toLowerCase();
+
   return [
     "mitmes minut",
     "minute",
@@ -122,7 +148,10 @@ function looksLikeLiveStatusQuestion(message: string): boolean {
     "score",
     "skoor",
     "live score",
-    "what minute"
+    "what minute",
+    "seis",
+    "käib",
+    "kaib"
   ].some((term) => lower.includes(term));
 }
 
@@ -131,6 +160,7 @@ function buildLiveStatusAnswer(
   sportsContext: Awaited<ReturnType<typeof buildSportsContext>>
 ): string {
   const lower = question.toLowerCase();
+
   const fixture =
     sportsContext.fixtures.find(
       (item) =>
@@ -146,6 +176,7 @@ function buildLiveStatusAnswer(
     fixture.score?.home !== undefined && fixture.score?.away !== undefined
       ? `${fixture.score.home}-${fixture.score.away}`
       : "skoor pole saadaval";
+
   const minute =
     fixture.status === "live"
       ? fixture.minute
